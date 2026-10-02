@@ -1,9 +1,11 @@
+```python
 import asyncio
 import threading
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
 
 from telethon import TelegramClient, events
+from telethon.errors import SessionPasswordNeededError
 
 
 # ============================================================
@@ -15,12 +17,18 @@ from telethon import TelegramClient, events
 # - Display new Telegram posts
 # - DOES NOT PLACE TRADES
 #
+# LOGIN:
+# - OTP is entered through the GUI
+# - Telegram 2FA password is entered through the GUI if required
+# - No console/stdin is required
+#
 # Later versions:
 # V2 = Detect XAUUSD / GOLD signals
 # V3 = Extract BUY/SELL + Entry + SL + TP
 # V4 = Send structured signal to MT5
 # V5 = Demo trading + duplicate protection
 # ============================================================
+
 
 CHANNEL = "@Forex_Empire20"
 SESSION_NAME = "ForexEmpireListener"
@@ -40,6 +48,12 @@ class ForexEmpireListener:
 
         self.client = None
         self.loop = None
+
+        self.login_code = None
+        self.login_password = None
+
+        self.login_code_event = None
+        self.login_password_event = None
 
         # ----------------------------------------------------
         # MAIN FRAME
@@ -401,6 +415,261 @@ class ForexEmpireListener:
                 )
             )
 
+        finally:
+
+            try:
+
+                self.loop.close()
+
+            except Exception:
+
+                pass
+
+    # ========================================================
+    # GUI LOGIN CODE
+    # ========================================================
+
+    def ask_login_code(self):
+
+        self.login_code_event = asyncio.Event()
+
+        self.root.after(
+            0,
+            self.show_login_code_window
+        )
+
+        self.login_code_event_wait()
+
+    # ========================================================
+    # WAIT FOR LOGIN CODE
+    # ========================================================
+
+    def login_code_event_wait(self):
+
+        while not self.login_code_event.is_set():
+
+            self.root.update()
+
+            self.login_code_event._loop.call_soon_threadsafe(
+                lambda: None
+            )
+
+            import time
+
+            time.sleep(0.05)
+
+    # ========================================================
+    # LOGIN CODE WINDOW
+    # ========================================================
+
+    def show_login_code_window(self):
+
+        window = tk.Toplevel(self.root)
+
+        window.title("Telegram Login Code")
+
+        window.geometry("420x190")
+
+        window.resizable(False, False)
+
+        window.transient(self.root)
+
+        window.grab_set()
+
+        ttk.Label(
+            window,
+            text="Telegram Login Code",
+            font=("Segoe UI", 13, "bold")
+        ).pack(
+            pady=(20, 5)
+        )
+
+        ttk.Label(
+            window,
+            text="Enter the code Telegram sent to you:"
+        ).pack(
+            pady=5
+        )
+
+        code_entry = ttk.Entry(
+            window,
+            width=30
+        )
+
+        code_entry.pack(
+            pady=8
+        )
+
+        code_entry.focus_set()
+
+        def submit_code():
+
+            code = code_entry.get().strip()
+
+            if not code:
+
+                messagebox.showerror(
+                    "Login Code",
+                    "Please enter the Telegram login code.",
+                    parent=window
+                )
+
+                return
+
+            self.login_code = code
+
+            window.grab_release()
+
+            window.destroy()
+
+            self.root.after(
+                0,
+                self.set_login_code_event
+            )
+
+        ttk.Button(
+            window,
+            text="SUBMIT CODE",
+            command=submit_code
+        ).pack(
+            pady=8
+        )
+
+        window.protocol(
+            "WM_DELETE_WINDOW",
+            window.destroy
+        )
+
+    # ========================================================
+    # SET LOGIN CODE EVENT
+    # ========================================================
+
+    def set_login_code_event(self):
+
+        if self.login_code_event:
+
+            self.login_code_event.set()
+
+    # ========================================================
+    # REQUEST LOGIN CODE
+    # ========================================================
+
+    async def request_login_code(self):
+
+        self.login_code = None
+
+        self.login_code_event = asyncio.Event()
+
+        self.root.after(
+            0,
+            self.show_login_code_window
+        )
+
+        while self.login_code is None:
+
+            await asyncio.sleep(0.1)
+
+        return self.login_code
+
+    # ========================================================
+    # GUI 2FA PASSWORD
+    # ========================================================
+
+    async def request_password(self):
+
+        self.login_password = None
+
+        self.login_password_event = asyncio.Event()
+
+        self.root.after(
+            0,
+            self.show_password_window
+        )
+
+        while self.login_password is None:
+
+            await asyncio.sleep(0.1)
+
+        return self.login_password
+
+    # ========================================================
+    # 2FA PASSWORD WINDOW
+    # ========================================================
+
+    def show_password_window(self):
+
+        window = tk.Toplevel(self.root)
+
+        window.title("Telegram 2-Step Verification")
+
+        window.geometry("450x200")
+
+        window.resizable(False, False)
+
+        window.transient(self.root)
+
+        window.grab_set()
+
+        ttk.Label(
+            window,
+            text="Telegram 2-Step Verification",
+            font=("Segoe UI", 13, "bold")
+        ).pack(
+            pady=(20, 5)
+        )
+
+        ttk.Label(
+            window,
+            text="Enter your Telegram 2FA password:"
+        ).pack(
+            pady=5
+        )
+
+        password_entry = ttk.Entry(
+            window,
+            width=32,
+            show="*"
+        )
+
+        password_entry.pack(
+            pady=8
+        )
+
+        password_entry.focus_set()
+
+        def submit_password():
+
+            password = password_entry.get()
+
+            if not password:
+
+                messagebox.showerror(
+                    "Telegram Password",
+                    "Please enter your Telegram 2FA password.",
+                    parent=window
+                )
+
+                return
+
+            self.login_password = password
+
+            window.grab_release()
+
+            window.destroy()
+
+        ttk.Button(
+            window,
+            text="SUBMIT PASSWORD",
+            command=submit_password
+        ).pack(
+            pady=8
+        )
+
+        window.protocol(
+            "WM_DELETE_WINDOW",
+            window.destroy
+        )
+
     # ========================================================
     # TELEGRAM MAIN
     # ========================================================
@@ -436,6 +705,7 @@ class ForexEmpireListener:
             message_text = event.raw_text or ""
 
             self.log("")
+
             self.log(
                 "========================================"
             )
@@ -463,16 +733,71 @@ class ForexEmpireListener:
             # ------------------------------------------------
 
         # ----------------------------------------------------
-        # LOGIN
+        # CONNECT
         # ----------------------------------------------------
 
-        self.log(
-            "Logging into your Telegram account..."
-        )
+        await self.client.connect()
 
-        await self.client.start(
-            phone=phone
-        )
+        # ----------------------------------------------------
+        # CHECK EXISTING SESSION
+        # ----------------------------------------------------
+
+        if await self.client.is_user_authorized():
+
+            self.log(
+                "Existing Telegram session found."
+            )
+
+        else:
+
+            self.log(
+                "No existing Telegram session found."
+            )
+
+            self.log(
+                "Sending login code to Telegram..."
+            )
+
+            await self.client.send_code_request(
+                phone
+            )
+
+            self.log(
+                "Telegram login code sent."
+            )
+
+            # ------------------------------------------------
+            # ASK FOR OTP THROUGH GUI
+            # ------------------------------------------------
+
+            code = await self.request_login_code()
+
+            self.log(
+                "Login code received from GUI."
+            )
+
+            try:
+
+                await self.client.sign_in(
+                    phone=phone,
+                    code=code
+                )
+
+            except SessionPasswordNeededError:
+
+                self.log(
+                    "Telegram 2-step verification is enabled."
+                )
+
+                self.log(
+                    "Waiting for 2FA password..."
+                )
+
+                password = await self.request_password()
+
+                await self.client.sign_in(
+                    password=password
+                )
 
         # ----------------------------------------------------
         # GET USER INFORMATION
@@ -507,6 +832,7 @@ class ForexEmpireListener:
         )
 
         self.log("")
+
         self.log(
             "========================================"
         )
@@ -551,3 +877,4 @@ if __name__ == "__main__":
     )
 
     root.mainloop()
+```
