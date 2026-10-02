@@ -1,0 +1,2 @@
+telethon>=1.41,<2
+pyinstaller>=6.10
